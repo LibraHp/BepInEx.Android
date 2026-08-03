@@ -8,6 +8,7 @@ using BepInEx.Preloader.Core.Logging;
 using BepInEx.Preloader.Core.Patching;
 using BepInEx.Preloader.RuntimeFixes;
 using BepInEx.Unity.Common;
+using BepInEx.Unity.IL2CPP.Logging;
 using MonoMod.Utils;
 
 namespace BepInEx.Unity.IL2CPP;
@@ -26,21 +27,13 @@ public static class Preloader
         try
         {
             HarmonyBackendFix.Initialize();
-            ConsoleSetOutFix.Apply();
-            UnityInfo.Initialize(Paths.ExecutablePath, Paths.GameDataPath);
+            UnityInfo.Initialize(Paths.ExecutablePath, Paths.GameDataPath, EnvVars.NEXT_UNITY_VERSION);
 
             ConsoleManager.Initialize(false, true);
 
             PreloaderLog = new PreloaderConsoleListener();
             Logger.Listeners.Add(PreloaderLog);
-
-            if (ConsoleManager.ConsoleEnabled)
-            {
-                ConsoleManager.CreateConsole();
-                Logger.Listeners.Add(new ConsoleLogListener());
-            }
-
-            RedirectStdErrFix.Apply();
+            Logger.Listeners.Add(new AndroidLogListener());
 
             ChainloaderLogHelper.PrintLogInfo(Log);
 
@@ -52,7 +45,7 @@ public static class Preloader
             Logger.Log(LogLevel.Debug, $"Interop assembly directory: {Il2CppInteropManager.IL2CPPInteropAssemblyPath}");
             Logger.Log(LogLevel.Debug, $"BepInEx root path: {Paths.BepInExRootPath}");
 
-            if (PlatformHelper.Is(Platform.Wine) && !Environment.Is64BitProcess)
+            if (PlatformDetection.OS is OSKind.Wine && !Environment.Is64BitProcess)
             {
                 if (!NativeLibrary.TryGetExport(NativeLibrary.Load("ntdll"), "RtlRestoreContext", out var _))
                 {
@@ -78,9 +71,7 @@ public static class Preloader
                 assemblyPatcher.PatchAndLoad();
             }
 
-
             Logger.Listeners.Remove(PreloaderLog);
-
 
             Chainloader = new IL2CPPChainloader();
 
@@ -96,7 +87,7 @@ public static class Preloader
 
     private static IntPtr DllImportResolver(string libraryName, Assembly assembly, DllImportSearchPath? searchPath)
     {
-        if (libraryName == "GameAssembly")
+        if (libraryName is "GameAssembly" or "libil2cpp" or "libil2cpp.so")
         {
             return NativeLibrary.Load(Il2CppInteropManager.GameAssemblyPath, assembly, searchPath);
         }

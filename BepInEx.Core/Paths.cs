@@ -20,12 +20,6 @@ public static class Paths
                                     .InformationalVersion);
 
     /// <summary>
-    ///    BepInEx version without the build suffix.
-    /// </summary>
-    public static Version DisplayBepInExVersion { get; } =
-        new(BepInExVersion.Major, BepInExVersion.Minor, BepInExVersion.Patch, BepInExVersion.PreRelease);
-
-    /// <summary>
     ///     The path to the Managed folder that contains the main managed assemblies.
     /// </summary>
     public static string ManagedPath { get; private set; }
@@ -108,26 +102,30 @@ public static class Paths
         ExecutablePath = executablePath;
         ProcessName = Path.GetFileNameWithoutExtension(executablePath);
 
-        GameRootPath = PlatformHelper.Is(Platform.MacOS)
+        GameRootPath = PlatformDetection.OS is OSKind.OSX
                            ? Utility.ParentDirectory(executablePath, 4)
                            : Path.GetDirectoryName(executablePath);
 
-        if (managedPath != null && gameDataRelativeToManaged)
+        if (PlatformDetection.OS is OSKind.Android)
         {
-            GameDataPath = Path.GetDirectoryName(managedPath);
+            GameDataPath = managedPath;
         }
         else
         {
-            // According to some experiments, Unity checks whether globalgamemanagers/data.unity3d exists in the data folder before picking it.
-            // 'ProcessName_Data' folder is checked first, then if that fails 'Data' folder is checked. If neither is valid, the player crashes.
-            // A simple Directory.Exists check is accurate enough while being less likely to break in case these conditions change.
-            GameDataPath = Path.Combine(GameRootPath, $"{ProcessName}_Data");
-            if (!Directory.Exists(GameDataPath))
-                GameDataPath = Path.Combine(GameRootPath, "Data");
+            if (managedPath != null && gameDataRelativeToManaged)
+            {
+                GameDataPath = Path.GetDirectoryName(managedPath);
+            }
+            else
+            {
+                // According to some experiments, Unity checks whether globalgamemanagers/data.unity3d exists in the data folder before picking it.
+                // 'ProcessName_Data' folder is checked first, then if that fails 'Data' folder is checked. If neither is valid, the player crashes.
+                // A simple Directory.Exists check is accurate enough while being less likely to break in case these conditions change.
+                GameDataPath = Path.Combine(GameRootPath, $"{ProcessName}_Data");
+                if (!Directory.Exists(GameDataPath))
+                    GameDataPath = Path.Combine(GameRootPath, "Data");
+            }
         }
-        
-        if (string.IsNullOrEmpty(GameDataPath) || !Directory.Exists(GameDataPath))
-            throw new DirectoryNotFoundException("Failed to extract valid GameDataPath from executablePath: " + executablePath);
 
         ManagedPath = managedPath ?? Path.Combine(GameDataPath, "Managed");
         BepInExRootPath = bepinRootPath ?? Path.Combine(GameRootPath, "BepInEx");

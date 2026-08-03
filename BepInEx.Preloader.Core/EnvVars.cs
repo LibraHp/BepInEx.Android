@@ -1,48 +1,46 @@
-﻿using System;
+using System;
 using System.IO;
 
 namespace BepInEx.Preloader.Core;
 
 /// <summary>
-///     Doorstop environment variables, passed into the BepInEx preloader.
-///     <para>https://github.com/NeighTools/UnityDoorstop/wiki#environment-variables</para>
+///     NextCore environment variables, passed into the BepInEx preloader.
+///     <para>https://github.com/All-Of-Us-Mods/FusionCore</para>
 /// </summary>
 public static class EnvVars
 {
     /// <summary>
-    ///     Path to the assembly that was invoked via Doorstop. Contains the same value as in "targetAssembly" configuration
-    ///     option in the config file.
+    ///     Path to the BepInEx folder, passed in by NextCore.
     /// </summary>
-    public static string DOORSTOP_INVOKE_DLL_PATH { get; private set; }
+    public static string NEXT_BEPINEX_PATH { get; private set; }
 
     /// <summary>
-    ///     Full path to the game's "Managed" folder that contains all the game's managed assemblies
+    ///     Path to the game binary (libil2cpp.so)
     /// </summary>
-    public static string DOORSTOP_MANAGED_FOLDER_DIR { get; private set; }
+    public static string NEXT_GAME_BINARY { get; private set; }
 
     /// <summary>
-    ///     Full path to the game executable currently running.
+    ///     Path to the app's data directory, not safe to write.
     /// </summary>
-    public static string DOORSTOP_PROCESS_PATH { get; private set; }
+    public static string NEXT_GAME_DATA_DIR { get; private set; }
 
     /// <summary>
-    ///     Array of paths where Mono searches DLLs from before assembly resolvers are invoked.
+    ///     Path to NextCore's data directory, safe to write.
     /// </summary>
-    public static string[] DOORSTOP_DLL_SEARCH_DIRS { get; private set; }
+    public static string NEXT_APP_DATA_DIR { get; private set; }
+
 
     /// <summary>
-    ///     Path of the DLL that contains mono imports.
+    ///     Unity version override passed in by NextCore.
     /// </summary>
-    public static string DOORSTOP_MONO_LIB_PATH { get; private set; }
+    public static string NEXT_UNITY_VERSION { get; private set; }
 
     internal static void LoadVars()
     {
-        DOORSTOP_INVOKE_DLL_PATH = Environment.GetEnvironmentVariable("DOORSTOP_INVOKE_DLL_PATH");
-        DOORSTOP_MANAGED_FOLDER_DIR = Environment.GetEnvironmentVariable("DOORSTOP_MANAGED_FOLDER_DIR");
-        DOORSTOP_PROCESS_PATH = Environment.GetEnvironmentVariable("DOORSTOP_PROCESS_PATH");
-        DOORSTOP_MONO_LIB_PATH = Environment.GetEnvironmentVariable("DOORSTOP_MONO_LIB_PATH");
-        DOORSTOP_DLL_SEARCH_DIRS =
-            Environment.GetEnvironmentVariable("DOORSTOP_DLL_SEARCH_DIRS")?.Split(Path.PathSeparator) ??
-            new string[0];
+        NEXT_BEPINEX_PATH = Environment.GetEnvironmentVariable("NEXT_BEPINEX_PATH");
+        NEXT_GAME_BINARY = Environment.GetEnvironmentVariable("NEXT_GAME_BINARY");
+        NEXT_GAME_DATA_DIR = Environment.GetEnvironmentVariable("NEXT_GAME_DATA_DIR");
+        NEXT_APP_DATA_DIR = Environment.GetEnvironmentVariable("NEXT_APP_DATA_DIR");
+        NEXT_UNITY_VERSION = Environment.GetEnvironmentVariable("NEXT_UNITY_VERSION");
     }
 }

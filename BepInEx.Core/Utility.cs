@@ -4,7 +4,6 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Reflection.Emit;
-using System.Security.Cryptography;
 using System.Text;
 using BepInEx.Logging;
 using Mono.Cecil;
@@ -303,42 +302,38 @@ public static class Utility
     }
 
     /// <summary>
-    ///     Compute a MD5 hash of the given stream.
+    ///     Compute a hash of the given stream (FNV-1a, pure managed — no OpenSSL needed).
     /// </summary>
-    /// <param name="stream">Stream to hash</param>
-    /// <returns>MD5 hash as a hex string</returns>
     public static string HashStream(Stream stream)
     {
-        using var md5 = MD5.Create();
-
+        // FNV-1a 64-bit — pure managed, no crypto dependency.
+        // Android BoringSSL lacks EVP_MD_CTX_new, so MD5.Create crashes.
+        const ulong FNV_PRIME = 1099511628211UL;
+        const ulong FNV_OFFSET = 14695981039346656037UL;
+        var hash = FNV_OFFSET;
         var buf = new byte[4096];
         int read;
         while ((read = stream.Read(buf, 0, buf.Length)) > 0)
-            md5.TransformBlock(buf, 0, read, buf, 0);
-
-        md5.TransformFinalBlock(new byte[0], 0, 0);
-
-        return ByteArrayToString(md5.Hash);
+            for (int i = 0; i < read; i++)
+                hash = (hash ^ buf[i]) * FNV_PRIME;
+        return hash.ToString("x16");
     }
 
     /// <summary>
-    /// Hash a list of strings using MD5
+    /// Hash a list of strings using FNV-1a.
     /// </summary>
-    /// <param name="strings">Strings to hash</param>
-    /// <returns>MD5 of the strings</returns>
     public static string HashStrings(params string[] strings)
     {
-        using var md5 = MD5.Create();
-
+        const ulong FNV_PRIME = 1099511628211UL;
+        const ulong FNV_OFFSET = 14695981039346656037UL;
+        var hash = FNV_OFFSET;
         foreach (var str in strings)
         {
             var bytes = Encoding.UTF8.GetBytes(str);
-            md5.TransformBlock(bytes, 0, bytes.Length, null, 0);
+            foreach (var b in bytes)
+                hash = (hash ^ b) * FNV_PRIME;
         }
-
-        md5.TransformFinalBlock(new byte[0], 0, 0);
-
-        return ByteArrayToString(md5.Hash);
+        return hash.ToString("x16");
     }
 
     /// <summary>

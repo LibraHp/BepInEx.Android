@@ -9,6 +9,7 @@ using System.Text.RegularExpressions;
 using BepInEx.Configuration;
 using BepInEx.Logging;
 using Mono.Cecil;
+using MonoMod.Utils;
 
 namespace BepInEx.Bootstrap;
 
@@ -244,7 +245,11 @@ public abstract class BaseChainloader<TPlugin>
 
                 // Perform checks that will prevent loading plugins in this run
                 var filters = pluginInfo.Processes.ToList();
-                var invalidProcessName = filters.Count != 0 &&
+                // On Android, process name filtering is meaningless — each app runs
+                // in a single process and ProcessName is "libil2cpp", which will never
+                // match PC game process names like "Among Us.exe".
+                var invalidProcessName = PlatformDetection.OS is not OSKind.Android &&
+                                         filters.Count != 0 &&
                                          filters.All(x => !string.Equals(x.ProcessName.Replace(".exe", ""),
                                                                          Paths.ProcessName,
                                                                          StringComparison

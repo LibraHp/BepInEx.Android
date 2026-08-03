@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using BepInEx.Bootstrap;
@@ -9,7 +10,9 @@ using BepInEx.Preloader.Core.Logging;
 using BepInEx.Unity.IL2CPP.Hook;
 using BepInEx.Unity.IL2CPP.Logging;
 using BepInEx.Unity.IL2CPP.Utils;
+using Il2CppInterop.Common.XrefScans;
 using Il2CppInterop.Runtime.InteropTypes;
+using MonoMod.Utils;
 using UnityEngine;
 using Logger = BepInEx.Logging.Logger;
 
@@ -30,7 +33,7 @@ public class IL2CPPChainloader : BaseChainloader<BasePlugin>
      "Include unity log messages in log file output.");
 
 
-    private static INativeDetour RuntimeInvokeDetour { get; set; }
+    private static NativeDetour RuntimeInvokeDetour { get; set; }
 
     public static IL2CPPChainloader Instance { get; set; }
 
@@ -58,7 +61,21 @@ public class IL2CPPChainloader : BaseChainloader<BasePlugin>
         base.Initialize(gameExePath);
         Instance = this;
 
-        if (!NativeLibrary.TryLoad("GameAssembly", typeof(IL2CPPChainloader).Assembly, null, out var il2CppHandle))
+        string gameLibraryName;
+        if (PlatformDetection.OS is OSKind.Windows or OSKind.OSX)
+        {
+            gameLibraryName = "GameAssembly";
+        }
+        else if (PlatformDetection.OS is OSKind.Linux or OSKind.Android)
+        {
+            gameLibraryName = "libil2cpp.so";
+        }
+        else
+        {
+            throw new PlatformNotSupportedException("Unsupported platform!");
+        }
+
+        if (!NativeLibrary.TryLoad(gameLibraryName, typeof(IL2CPPChainloader).Assembly, null, out var il2CppHandle))
         {
             Logger.Log(LogLevel.Fatal,
                        "Could not locate Il2Cpp game assembly (GameAssembly.dll, UserAssembly.dll or libil2cpp.so). The game might be obfuscated or use a yet unsupported build of Unity.");
@@ -66,11 +83,14 @@ public class IL2CPPChainloader : BaseChainloader<BasePlugin>
         }
 
         var runtimeInvokePtr = NativeLibrary.GetExport(il2CppHandle, "il2cpp_runtime_invoke");
+        runtimeInvokePtr = XrefScannerLowLevel.JumpTargets(runtimeInvokePtr).First();
+
         PreloaderLogger.Log.Log(LogLevel.Debug, $"Runtime invoke pointer: 0x{runtimeInvokePtr.ToInt64():X}");
         RuntimeInvokeDetourDelegate invokeMethodDetour = OnInvokeMethod;
 
-        RuntimeInvokeDetour =
-            INativeDetour.CreateAndApply(runtimeInvokePtr, invokeMethodDetour, out originalInvoke);
+        RuntimeInvokeDetour = new NativeDetour(runtimeInvokePtr, invokeMethodDetour);
+        originalInvoke = RuntimeInvokeDetour.GenerateTrampoline<RuntimeInvokeDetourDelegate>();
+
         PreloaderLogger.Log.Log(LogLevel.Debug, "Runtime invoke patched");
     }
 
@@ -83,11 +103,15 @@ public class IL2CPPChainloader : BaseChainloader<BasePlugin>
         if (methodName == "Internal_ActiveSceneChanged")
             try
             {
-                // Unhook up front so the detour fires once even if setup below throws.
-                unhook = true;
+                if (ConfigUnityLogging.Value)
+                {
+                    Logger.Sources.Add(new IL2CPPUnityLogSource());
 
-                // Isolated so a missing-interop JIT failure happens inside the try (caught), not in OnInvokeMethod itself.
-                SetupUnityLogging();
+                    Application.CallLogCallback("Test call after applying unity logging hook", "", LogType.Assert,
+                                                true);
+                }
+
+                unhook = true;
 
                 Il2CppInteropManager.PreloadInteropAssemblies();
 
@@ -95,7 +119,7 @@ public class IL2CPPChainloader : BaseChainloader<BasePlugin>
             }
             catch (Exception ex)
             {
-                Logger.Log(LogLevel.Fatal, "Unable to execute IL2CPP chainloader, no plugins will be loaded");
+                Logger.Log(LogLevel.Fatal, "Unable to execute IL2CPP chainloader");
                 Logger.Log(LogLevel.Error, ex);
             }
 
@@ -111,24 +135,11 @@ public class IL2CPPChainloader : BaseChainloader<BasePlugin>
         return result;
     }
 
-    // JIT-compiled only when called here, so OnInvokeMethod needs no interop assemblies present to JIT.
-    private static void SetupUnityLogging()
-    {
-        if (!ConfigUnityLogging.Value)
-            return;
-
-        Logger.Sources.Add(new IL2CPPUnityLogSource());
-
-        Application.CallLogCallback("Test call after applying unity logging hook", "", LogType.Assert, true);
-    }
-
     protected override void InitializeLoggers()
     {
         base.InitializeLoggers();
 
         if (!ConfigDiskWriteUnityLog.Value) DiskLogListener.BlacklistedSources.Add("Unity");
-
-        ChainloaderLogHelper.RewritePreloaderLogs();
 
         Logger.Sources.Add(new IL2CPPLogSource());
     }

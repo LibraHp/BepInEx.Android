@@ -1,40 +1,34 @@
 using System;
-using System.Diagnostics;
 using System.IO;
-using System.Threading;
-using BepInEx;
+using System.Runtime.InteropServices;
 using BepInEx.Preloader.Core;
-using BepInEx.Unity.IL2CPP;
 using BepInEx.Unity.IL2CPP.Utils;
 using MonoMod.Utils;
 
-// ReSharper disable once CheckNamespace
-namespace Doorstop;
+namespace BepInEx.Unity.IL2CPP;
 
-internal static class Entrypoint
+public static class NextCoreEntrypoint
 {
     /// <summary>
-    ///     The main entrypoint of BepInEx, called from Doorstop.
+    ///     The main entrypoint of BepInEx, called from NextCore.
     /// </summary>
     public static void Start()
     {
         // We set it to the current directory first as a fallback, but try to use the same location as the .exe file.
         var silentExceptionLog = Environment.GetEnvironmentVariable("BEPINEX_PRELOADER_LOG") ??
                                  $"preloader_{DateTime.Now:yyyyMMdd_HHmmss_fff}.log";
-        Mutex mutex = null;
+
+        AppDomain.CurrentDomain.UnhandledException += (sender, args) =>
+        {
+            Console.WriteLine(args.ExceptionObject.ToString());
+        };
 
         try
         {
             EnvVars.LoadVars();
 
             silentExceptionLog =
-                Path.Combine(Path.GetDirectoryName(EnvVars.DOORSTOP_PROCESS_PATH), silentExceptionLog);
-
-            var mutexId = Utility.HashStrings(Process.GetCurrentProcess().ProcessName, EnvVars.DOORSTOP_PROCESS_PATH,
-                                              typeof(Entrypoint).FullName);
-
-            mutex = new Mutex(false, $"Global\\{mutexId}");
-            mutex.WaitOne();
+                Path.Combine(Path.GetDirectoryName(EnvVars.NEXT_APP_DATA_DIR), silentExceptionLog);
 
             UnityPreloaderRunner.PreloaderMain();
         }
@@ -44,7 +38,7 @@ internal static class Entrypoint
 
             try
             {
-                if (PlatformHelper.Is(Platform.Windows))
+                if (PlatformDetection.OS is OSKind.Windows)
                 {
                     MessageBox.Show("Failed to start BepInEx", "BepInEx");
                 }
@@ -64,10 +58,6 @@ internal static class Entrypoint
             }
 
             Environment.Exit(1);
-        }
-        finally
-        {
-            mutex?.ReleaseMutex();
         }
     }
 }

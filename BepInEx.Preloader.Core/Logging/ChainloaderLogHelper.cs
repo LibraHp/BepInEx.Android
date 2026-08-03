@@ -35,14 +35,17 @@ public static class ChainloaderLogHelper
 
     public static void PrintLogInfo(ManualLogSource log)
     {
-        var consoleTitle = $"BepInEx {Paths.DisplayBepInExVersion} - {Paths.ProcessName}";
+        var bepinVersion = Paths.BepInExVersion;
+        var versionMini = new SemanticVersioning.Version(bepinVersion.Major, bepinVersion.Minor, bepinVersion.Patch,
+                                                         bepinVersion.PreRelease);
+        var consoleTitle = $"BepInEx {versionMini} - {Paths.ProcessName}";
         log.Log(LogLevel.Message, $"{consoleTitle} ({File.GetLastWriteTime(Paths.ExecutablePath)})");
 
         if (ConsoleManager.ConsoleActive)
             ConsoleManager.SetConsoleTitle(consoleTitle);
 
-        if (!string.IsNullOrEmpty(Paths.BepInExVersion.Build))
-            log.Log(LogLevel.Message, $"Built from commit {Paths.BepInExVersion.Build}");
+        if (!string.IsNullOrEmpty(bepinVersion.Build))
+            log.Log(LogLevel.Message, $"Built from commit {bepinVersion.Build}");
 
         Logger.Log(LogLevel.Info, $"System platform: {GetPlatformString()}");
         Logger.Log(LogLevel.Info,
@@ -55,27 +58,11 @@ public static class ChainloaderLogHelper
 
         var osVersion = Environment.OSVersion.Version;
 
-        // NOTE: this logic needs to be different for .NET 5.
-        // We don't use it and I don't think we will for a long time (possibly ever), but upgrading will break Environment.OSVersion
-        // https://docs.microsoft.com/en-us/dotnet/core/compatibility/core-libraries/5.0/environment-osversion-returns-correct-version#change-description
-
-        // Some additional notes
-        // On .NET Framework and .NET Core platforms before 5, Environment.OSVersion does not work as you would expect.
-
-        // On Windows, it returns at maximum 6.3 (Windows 8) if you don't specify that your application is specifically compatible with Windows 10, due to compatibility layer stuff.
-        // So we have to call RtlGetVersion which bypasses that and gets the values for us. This is done in PlatformUtils
-
-        // On macOS it returns the Darwin kernel version. I've included a mapping of most versions, but there's definitely some missing versions
-
-        // Not sure what it does on Linux. I think it returns the kernel version there too, but we already get the utsname structure from SetPlatform() regardless
-
-        if (PlatformHelper.Is(Platform.Windows))
+        if (PlatformDetection.OS.Has(OSKind.Windows))
         {
             osVersion = PlatformUtils.WindowsVersion;
 
             builder.Append("Windows ");
-
-            // https://stackoverflow.com/a/2819962
 
             if (osVersion.Major >= 10 && osVersion.Build >= 22000)
                 builder.Append("11");
@@ -92,10 +79,10 @@ public static class ChainloaderLogHelper
             else if (osVersion.Major <= 5)
                 builder.Append("XP");
 
-            if (PlatformHelper.Is(Platform.Wine))
+            if (PlatformDetection.OS.Has(OSKind.Wine))
                 builder.AppendFormat(" (Wine {0})", PlatformUtils.WineVersion);
         }
-        else if (PlatformHelper.Is(Platform.MacOS))
+        else if (PlatformDetection.OS.Has(OSKind.OSX))
         {
             builder.Append("macOS ");
 
@@ -111,7 +98,7 @@ public static class ChainloaderLogHelper
                 builder.AppendFormat("Unknown (kernel {0})", osVersion);
             }
         }
-        else if (PlatformHelper.Is(Platform.Linux))
+        else if (PlatformDetection.OS.Has(OSKind.Linux))
         {
             builder.Append("Linux");
 
@@ -121,18 +108,18 @@ public static class ChainloaderLogHelper
             }
         }
 
-        builder.Append(PlatformHelper.Is(Platform.Bits64) ? " 64-bit" : " 32-bit");
+        builder.Append(PlatformDetection.Architecture.Has(ArchitectureKind.Bits64) ? " 64-bit" : " 32-bit");
 
-        if (PlatformHelper.Is(Platform.Android))
+        if (PlatformDetection.OS.Has(OSKind.Android))
         {
             builder.Append(" Android");
         }
 
-        if (PlatformHelper.Is(Platform.ARM))
+        if (PlatformDetection.Architecture.Has(ArchitectureKind.Arm))
         {
             builder.Append(" ARM");
 
-            if (PlatformHelper.Is(Platform.Bits64))
+            if (PlatformDetection.Architecture.Has(ArchitectureKind.Arm64))
                 builder.Append("64");
         }
 

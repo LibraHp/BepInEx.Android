@@ -6,7 +6,6 @@ using System.IO.Compression;
 using System.Linq;
 using System.Net.Http;
 using System.Reflection;
-using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -40,8 +39,7 @@ internal static partial class Il2CppInteropManager
 {
     static Il2CppInteropManager()
     {
-        InstructionSetRegistry.RegisterInstructionSet<X86InstructionSet>(DefaultInstructionSets.X86_32);
-        InstructionSetRegistry.RegisterInstructionSet<X86InstructionSet>(DefaultInstructionSets.X86_64);
+        InstructionSetRegistry.RegisterInstructionSet<NewArmV8InstructionSet>(DefaultInstructionSets.ARM_V8);
         LibCpp2IlBinaryRegistry.RegisterBuiltInBinarySupport();
     }
 
@@ -103,7 +101,8 @@ internal static partial class Il2CppInteropManager
 
     private static readonly ConfigEntry<string> GlobalMetadataPath = ConfigFile.CoreConfig.Bind(
      "IL2CPP", "GlobalMetadataPath",
-     "{GameDataPath}/il2cpp_data/Metadata/global-metadata.dat",
+     "{GameDataPath}/Managed/Metadata/global-metadata.dat",
+     // 这会他妈有问题吧。
      new StringBuilder()
          .AppendLine("The path to the IL2CPP metadata file.")
          .AppendLine("Supports the following placeholders:")
@@ -119,8 +118,7 @@ internal static partial class Il2CppInteropManager
     private static bool initialized;
 
     public static string GameAssemblyPath => Environment.GetEnvironmentVariable("BEPINEX_GAME_ASSEMBLY_PATH") ??
-                                             Path.Combine(Paths.GameRootPath,
-                                                          "GameAssembly." + PlatformHelper.LibrarySuffix);
+                                             Path.Combine(Paths.GameRootPath, "GameAssembly.dll");
 
     private static string HashPath => Path.Combine(IL2CPPInteropAssemblyPath, "assembly-hash.txt");
 
@@ -149,74 +147,45 @@ internal static partial class Il2CppInteropManager
 
     private static string ComputeHash()
     {
-        using var md5 = MD5.Create();
-
-        static void HashFile(ICryptoTransform hash, string file)
-        {
-            const int defaultCopyBufferSize = 81920;
-            using var fs = File.OpenRead(file);
-            var buffer = new byte[defaultCopyBufferSize];
-            int read;
-            while ((read = fs.Read(buffer)) > 0)
-                hash.TransformBlock(buffer, 0, read, buffer, 0);
-        }
-
-        static void HashString(ICryptoTransform hash, string str)
-        {
-            var buffer = Encoding.UTF8.GetBytes(str);
-            hash.TransformBlock(buffer, 0, buffer.Length, buffer, 0);
-        }
-
-        HashFile(md5, GameAssemblyPath);
+        var hashes = new System.Collections.Generic.List<string>();
+        hashes.Add(Utility.HashStream(File.OpenRead(GameAssemblyPath)));
 
         if (Directory.Exists(UnityBaseLibsDirectory))
             foreach (var file in Directory.EnumerateFiles(UnityBaseLibsDirectory, "*.dll",
                                                           SearchOption.TopDirectoryOnly))
-            {
-                HashString(md5, Path.GetFileName(file));
-                HashFile(md5, file);
-            }
-
+                hashes.Add(Utility.HashStrings(Path.GetFileName(file)));
         if (File.Exists(RenameMapPath))
-        {
-            HashFile(md5, RenameMapPath);
-        }
+            hashes.Add(Utility.HashStream(File.OpenRead(RenameMapPath)));
+        hashes.Add(typeof(InteropAssemblyGenerator).Assembly.GetName().Version.ToString());
+        hashes.Add(typeof(Cpp2IlApi).Assembly.GetName().Version.ToString());
 
-        // Hash some common dependencies as they can affect output
-        HashString(md5, typeof(InteropAssemblyGenerator).Assembly.GetName().Version.ToString());
-        HashString(md5, typeof(Cpp2IlApi).Assembly.GetName().Version.ToString());
-
-        md5.TransformFinalBlock(new byte[0], 0, 0);
-
-        return Utility.ByteArrayToString(md5.Hash);
+        return Utility.HashStrings(hashes.ToArray());
     }
 
     private static bool CheckIfGenerationRequired()
     {
-        static bool NeedGenerationOrSkip()
-        {
-            if (!UpdateInteropAssemblies.Value)
-            {
-                var hash = ComputeHash();
-                Logger.LogWarning($"Interop assemblies are possibly out of date. To disable this message, create file {HashPath} with the following contents: {hash}");
-                return false;
-            }
+        if (!UpdateInteropAssemblies.Value)
+            return false;
 
+        if (!Directory.Exists(IL2CPPInteropAssemblyPath))
+        {
+            Logger.LogInfo("Interop assemblies not found — will generate now");
             return true;
         }
 
-        if (!Directory.Exists(IL2CPPInteropAssemblyPath))
-            return true;
-
         if (!File.Exists(HashPath))
-            return NeedGenerationOrSkip();
+        {
+            Logger.LogInfo("No assembly hash file — will generate interop");
+            return true;
+        }
 
-        if (ComputeHash() != File.ReadAllText(HashPath) && NeedGenerationOrSkip())
+        if (ComputeHash() != File.ReadAllText(HashPath))
         {
             Logger.LogInfo("Detected outdated interop assemblies, will regenerate them now");
             return true;
         }
 
+        Logger.LogInfo("Interop assemblies up to date");
         return false;
     }
 
@@ -244,7 +213,7 @@ internal static partial class Il2CppInteropManager
         Il2CppInteropRuntime.Create(new RuntimeConfiguration
                             {
                                 UnityVersion = new Version(unityVersion.Major, unityVersion.Minor, unityVersion.Build),
-                                DetourProvider = new Il2CppInteropDetourProvider()
+                                DetourProvider = new NativeDetourProvider()
                             })
                             .AddLogger(interopLogger)
                             .AddHarmonySupport()
